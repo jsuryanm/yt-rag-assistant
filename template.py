@@ -30,6 +30,7 @@ list_of_files = [
     f"{project_name}/tests/test_transcriptor_agent.py",
     f"{project_name}/tests/test_summary_agent.py",
     f"{project_name}/tests/test_orchestor_agent.py",
+    f"{project_name}/tests/test_mcp_tool_agent.py",
     f"{project_name}/tests/test_rag_agent.py",
     f"{project_name}/logger/__init__.py",
     f"{project_name}/logger/custom_logger.py",

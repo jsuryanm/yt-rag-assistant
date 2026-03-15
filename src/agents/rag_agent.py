@@ -81,6 +81,7 @@ class AgenticRAGAgent:
                     "agent_trace":["RAGAgent:no chunks to index"]}
         
         if self._indexed_video_url != video_url:
+            # prevents rebuilding index 
             logger.info(f"RAGAgent: building FAISS index with {len(chunks)} chunks")
             self._faiss_index = FAISS.from_texts(chunks,self._embeddings)
             self._indexed_video_url = video_url
