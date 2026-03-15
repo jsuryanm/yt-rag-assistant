@@ -6,7 +6,10 @@ langchain-openai
 langchain-huggingface
 langchain-text-splitters
 langchain-mcp-adapters
+langchain-tavily
 langgraph
+
+tavily-python
 
 mcp
 mcp-cli
