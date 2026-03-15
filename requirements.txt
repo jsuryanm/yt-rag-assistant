@@ -1,3 +1,6 @@
+scikit-learn
+scipy
+
 langchain
 langchain-core
 langchain-community
@@ -33,7 +36,8 @@ sse-starlette
 streamlit
 streamlit-extras
 
-loguru
+requests
+
 pytest
 pytest-asyncio
 

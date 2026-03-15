@@ -80,4 +80,58 @@ class TranscriptAgent:
         logger.info("Transcriptor agent: Starting")
 
         video_url = state.get("video_url","")
+        video_id = self.extract_video_id(video_url)
+
+        if not video_id:
+            return {"error":f"Could not extract video id from URL: {video_url}",
+                    "agent_trace":["TranscriptorAgent: invalid URL"]}
         
+        logger.info(f"TranscriptorAgent: fetching transcript for video_id: {video_id}")
+        transcript_text = self.fetch_transcript(video_id)
+
+        if not transcript_text:
+            return {"error":"No english transcript found for this video",
+                    "agent_trace":["TranscriptorAgent: no transcript available"]}
+        
+        chunks = self.chunk_text(transcript_text)
+        logger.info(f"TranscriptorAgent: got {len(transcript_text)} chars, {len(chunks)} chunks")
+        return {"processed_transcript":transcript_text,
+                "chunks":chunks,
+                "agent_trace":[f"TranscriptAgent: fetched transcript ({len(transcript_text)} chars, {len(chunks)} chunks)"]}
+    
+    def _transcript_to_text(self, transcript_data) -> str:
+        """
+        Convert list of transcript snippet objects to a single clean string.
+        Each snippet has .text and .start attributes.
+        We keep text only (no timestamps) — cleaner for LLM processing.
+        """
+        parts = []
+        for snippet in transcript_data:
+            try:
+                # New youtube-transcript-api uses attribute access
+                text = snippet.text.strip()
+            except AttributeError:
+                # Fallback for older versions that return dicts
+                text = snippet.get("text", "").strip()
+            if text:
+                parts.append(text)
+
+        # Join with space — transcript is naturally continuous speech
+        return " ".join(parts)
+    
+# if __name__ == "__main__":
+#     transcript_agent = TranscriptAgent()
+#     state = {
+#     "video_url": "https://www.youtube.com/watch?v=BV0YUeam4y8"
+# }
+
+#     result = transcript_agent.run(state)
+
+#     print("\nRESULT:")
+#     print(result.keys())
+
+#     print("\nTranscript preview:")
+#     print(result.get("processed_transcript","")[:500])
+
+#     print("\nChunks count:")
+#     print(len(result.get("chunks",[])))
