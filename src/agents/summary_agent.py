@@ -67,7 +67,7 @@ class SummaryAgent:
             logger.info(f"SummaryAgent: summary generated ({len(summary)} chars)")
             
             return {"summary":summary,
-                    "agent_trace":f"summary generated ({len(summary)}) chunks"}
+                    "agent_trace":[f"SummaryAgent: summary generated ({len(summary)} chars)"]}
         
         except Exception as e:  
             logger.error(f"Summarization Agent error:{str(e)}")

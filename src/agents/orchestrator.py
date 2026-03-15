@@ -35,18 +35,26 @@ class OrchestratorAgent:
     2. Routes to the appropriate sub-agent pipeline
     3. Manages shared state across all agents
     """
-
     _INTENT_PROMPT = ChatPromptTemplate.from_messages([
-        ("system","""Classify the user's intent intent for a YouTube video bot.
-         Return ONLY one of these exact words:
-         - 'summarize' - user wants summary of the video
-         - 'qa' - user has specific question about the video content
-         - 'search' - user wants web search for context beyond the video
+        ("system", """You are an intent classifier for a YouTube video assistant.
+    Classify the user's request into EXACTLY one of these three categories:
 
-         No explanation, just the single word."""),
-         ("human","User request: {request}")
+    'summarize' — ONLY when user explicitly asks for a summary/overview of the whole video.
+    Examples: "summarize", "give me a summary", "overview", "recap", "tldr"
+
+    'qa' — when user asks ANY question or wants explanation of SPECIFIC content.
+    Examples: "explain X", "what is X", "how does X work", "what did they say about X",
+                "describe X", "tell me about X", "main idea", "key concept", "what does X mean"
+
+    'search' — when user wants external/web information beyond the video.
+    Examples: "search for", "find online", "latest news on", "current status of"
+
+    IMPORTANT: "explain", "describe", "what is", "main idea" → always classify as 'qa', NOT 'summarize'.
+    Only use 'summarize' if the user literally asks for a summary of the entire video.
+
+    Respond with ONLY the single word: summarize, qa, or search."""),
+        ("human", "User request: {request}")
     ])
-
     def __init__(self):
         # instantiate all sub agents 
         self._transcript_agent = TranscriptAgent()
@@ -71,6 +79,7 @@ class OrchestratorAgent:
         graph.add_node("classify_intent",self._classify_intent)
         graph.add_node("fetch_transcript",self._transcript_agent.run)
         graph.add_node("summarize",self._summary_agent.run)
+        graph.add_node("handle_error",self._handle_error)
 
         # RAG sub pipeline nodes 
         graph.add_node("build_index",self._rag_agent.build_index)
@@ -96,10 +105,12 @@ class OrchestratorAgent:
                                     {
                                         "summarize":"summarize",
                                         "build_index":"build_index",
-                                        "mcp_search":"mcp_search"
+                                        "mcp_search":"mcp_search",
+                                        "handle_error":"handle_error",
                                     })
         # summarize path 
         graph.add_edge("summarize",END)
+        graph.add_edge("handle_error", END)
 
         # RAG path 
         graph.add_edge("build_index","retrieve")
@@ -116,7 +127,12 @@ class OrchestratorAgent:
 
         # check for hallucinations then done 
         graph.add_edge("generate","check_hallucination")
-        graph.add_edge("check_hallucination",END)
+        graph.add_conditional_edges("check_hallucination",
+                                    self._route_after_hallucination,
+                                    {"end": END, "combine": "combine_results"})
+
+        
+        graph.add_edge("combine_results", END)
 
         # mcp search path 
         # After MCP search, also do RAG and combine results
@@ -124,6 +140,175 @@ class OrchestratorAgent:
         # build_index → retrieve → grade → generate → check → combine
         # Override the normal END: after hallucination check, go to combine
         # We need a separate "combine" step for the mcp+rag results
-        graph.add_edge("combine_results", END)
-
+        
         return graph.compile()
+    
+    def _classify_intent(self,state: AgentState) -> dict:
+        """Node: Determine what user wants"""
+        question = state.get("user_question","")
+        video_url = state.get("video_url","")
+
+        if not question or question.strip() == "":
+            logger.info("OrchestratorAgent: no question -> Summarize intent")
+            return {"intent":"summarize",
+                    "agent_trace":[f"Orchestrator: intent = summarize (no question)"],}
+        
+        request_text = f"Video URL: {video_url}\nUser question: {question}"
+        intent_raw = self._intent_chain.invoke({"request":request_text})
+        intent = intent_raw.strip().lower()
+        
+        if intent not in ("summarize","qa","search"):
+            intent = "qa"
+        
+        logger.info(f"OrchestratorAgent: classified intent='{intent}'")
+        
+        return {"intent":intent,
+                "rewrite_count":0,
+                "agent_trace":[f"Orchestrator: intent={intent}"]}
+    
+    def _route_after_transcript(self,state: AgentState) -> str:
+        """Conditional edge function - returns name of the next node,
+        This is not a graph node itself, so it never updates state or agent_state"""
+
+        error = state.get("error")
+        if error:
+            logger.warning(f"OrchestratorAgent: transcript error, routing to END: {state.get("error")}")
+            return "handle_error"  # SummaryAgent will gracefully return no-transcript message
+        
+        intent = state.get("intent", "summarize")
+        route_map = {"summarize": "summarize", "qa": "build_index", "search": "mcp_search"}
+        route = route_map.get(intent, "build_index")
+        logger.info(f"OrchestratorAgent: routing to '{route}'")
+        return route
+    
+    def _handle_error(self, state: AgentState) -> dict:
+        """NEW: terminal node for pipeline errors"""
+        logger.error(f"Pipeline terminated early: {state.get('error')}")
+        return {"agent_trace": [f"Orchestrator: pipeline stopped — {state.get('error')}"]}
+    
+
+    def _combine_mcp_and_rag(self,state: AgentState) -> dict:
+        """Node: Combine Tavily web results with RAG answer"""
+        rag_answer = state.get("answer","")
+        mcp_results = state.get("mcp_results",[])
+        mcp_context = "\n\n".join(mcp_results) if mcp_results else ""
+
+        if mcp_context and rag_answer:
+            combined = (
+                f"**From the video:**\n{rag_answer}\n\n"
+                f"**Additional web context:**\n{mcp_context}"
+            )
+        
+        elif mcp_context:
+            combined =  f"**Web search results:**\n{mcp_context}"
+        else:
+            combined = rag_answer 
+        
+        return {"answer":combined,
+                "agent_trace":["Orchestrator: combined RAG and web results"]}
+    
+    def _route_after_hallucination(self, state: AgentState) -> str:
+        """NEW: qa ends here; search continues to combine_results"""
+        intent = state.get("intent", "qa")
+        return "combine" if intent == "search" else "end"
+
+    # Public API 
+
+    def run(self,
+            video_url: str,
+            question: str|None = None) -> AgentState:
+        """
+        Synchronous entry point. Builds initial state and invokes the graph.
+
+        Args:
+            video_url: YouTube video URL
+            question:  Optional question (None = summary mode)
+
+        Returns:
+            Final AgentState after all nodes have run.
+
+        NOTE on messages initialisation:
+          We seed messages with a HumanMessage so the conversation history
+          starts correctly. MessagesState's add_messages reducer will append
+          subsequent AIMessages from agents automatically.
+          We do NOT set "messages": [] — MessagesState handles that default.
+        """
+
+        initial_state: AgentState = {
+            "video_url": video_url,
+            "user_question": question or "",
+            "raw_transcript": None,
+            "chunks": None,
+            "retrieved_docs": None,
+            "is_relevant": None,
+            "rewrite_count": 0,
+            "summary": None,
+            "answer": None,
+            "agent_trace": [],
+            # Seed messages with the user's request as a HumanMessage.
+            # add_messages reducer appends further messages from agent nodes.
+            "messages":[HumanMessage(content=question or f"Summarize this video: {video_url}")],
+            "mcp_results": None,
+            "intent":None,
+            "error": None 
+        }
+
+        logger.info(f"Orchestrator: starting graph for url: {video_url[:50]}")
+        final_state = self._graph.invoke(initial_state)
+        logger.info(f"Orchestrator: graph complete, trace={final_state.get("agent_trace")}")
+        return final_state 
+    
+
+    async def arun(self,video_url: str,question: str | None = None) -> AgentState:
+        # async entry point for fastapi
+        initial_state: AgentState = {
+            "video_url": video_url,
+            "user_question": question or "",
+            "raw_transcript": None,
+            "processed_transcript": None,
+            "chunks": None,
+            "retrieved_docs": None,
+            "is_relevant": None,
+            "rewrite_count": 0,
+            "summary": None,
+            "answer": None,
+            "agent_trace": [],
+            "messages": [HumanMessage(content=question or f"Summarize this video: {video_url}")],
+            "mcp_results": None,
+            "intent": None,
+            "error": None,
+        }
+
+        final_state = await self._graph.ainvoke(initial_state)
+        return final_state
+    
+    def stream_run(self, video_url: str, question: str | None = None):
+        """
+        Generator that yields state updates as each node completes.
+        Perfect for streaming progress to the UI.
+
+        Usage:
+            for chunk in orchestrator.stream_run(url, question):
+                print(chunk)  # Each chunk is a partial state update
+        """
+        initial_state: AgentState = {
+            "video_url": video_url,
+            "user_question": question or "",
+            "raw_transcript": None,
+            "processed_transcript": None,
+            "chunks": None,
+            "retrieved_docs": None,
+            "is_relevant": None,
+            "rewrite_count": 0,
+            "summary": None,
+            "answer": None,
+            "agent_trace": [],
+            "messages": [HumanMessage(content=question or f"Summarize this video: {video_url}")],
+            "mcp_results": None,
+            "intent": None,
+            "error": None,
+        }
+
+        # graph.stream() yields {"node_name": partial_state_update} after each node
+        for chunk in self._graph.stream(initial_state):
+            yield chunk

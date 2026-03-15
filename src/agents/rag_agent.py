@@ -28,7 +28,7 @@ class AgenticRAGAgent:
     _GENERATE_PROMPT = ChatPromptTemplate.from_messages([
         ("system","""You are a fact-checker. Given context documents and a generate an answer,
          determine if the answer is grounded in (supported by) the context."""),
-         ("human","Context from video:\n{context}\n\Question: {question}\n\nAnswer:")
+         ("human","Context from video:\n{context}\n\nQuestion: {question}\n\nAnswer:")
     ])
 
     _HALLUCINATION_PROMPTS = ChatPromptTemplate.from_messages([
