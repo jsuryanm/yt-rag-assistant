@@ -39,6 +39,7 @@ list_of_files = [
     "backend/api/__init__.py",
     "backend/api/main.py",
     "backend/api/routers/__init__.py",
+    "backend/api/routers/health.py",
     "backend/api/routers/summarize.py",
     "backend/api/routers/qa.py",
     "frontend/__init__.py",

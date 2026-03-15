@@ -42,5 +42,6 @@ requests
 
 pytest
 pytest-asyncio
+pydantic
 
 python-dotenv

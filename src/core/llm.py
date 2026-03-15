@@ -17,7 +17,7 @@ class LLMFactory:
         """Returns cached groq llm"""
         
         _model = model or settings.groq_model 
-        _temp = temperature if temperature is not None else settings.groq_temperature
+        _temp = temperature if temperature is not None else settings.groq_temp
         _max = max_tokens or settings.groq_max_tokens
 
         logger.info(f"Creating ChatGroq model: model={_model}, temp={_temp}")

@@ -238,6 +238,7 @@ class OrchestratorAgent:
             "video_url": video_url,
             "user_question": question or "",
             "raw_transcript": None,
+            "processed_transcript":None,
             "chunks": None,
             "retrieved_docs": None,
             "is_relevant": None,
