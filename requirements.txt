@@ -18,6 +18,7 @@ mcp
 mcp-cli
 groq 
 openai
+faiss-cpu
 
 transformers 
 sentence-transformers

@@ -19,7 +19,7 @@ class AgentState(MessagesState):
 
     # operator.add = append-only (each node adds its own trace lines)
     # This is separate from `messages` — it's a human-readable step log for the UI
-    agent_trace: Annotated[List[str], operator.add]
+    agent_trace: Annotated[List[str], operator.add] # appends messages
 
     mcp_results: Optional[List[str]] # Results from Tavily / MCP tool calls
     intent: Optional[str] # "summarize" | "qa" | "search"
