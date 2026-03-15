@@ -17,6 +17,8 @@ tavily-python
 
 mcp
 mcp-cli
+a2a-sdk
+
 groq 
 openai
 faiss-cpu
@@ -31,7 +33,6 @@ fastapi
 uvicorn[standard]
 pydantic 
 pydantic-settings
-requests
 httpx
 sse-starlette
 

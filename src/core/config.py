@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     rag_top_k: int = Field(default=3)
     max_rewrite_attempts: int = Field(default=2)
 
+    a2a_base_url: str = Field(default="",description="Public base URL for A2A agent card (https://myapp.com)")
+
     tavily_api_key: str = Field(default="", description="Tavily Search API key")
 
     api_host: str = Field(default="0.0.0.0")

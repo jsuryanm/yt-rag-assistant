@@ -20,8 +20,6 @@ list_of_files = [
     f"{project_name}/core/state.py",
     f"{project_name}/core/llm.py",
     f"{project_name}/core/embeddings.py",
-    f"{project_name}/mcp_tools/__init__.py",
-    f"{project_name}/mcp_tools/mcp_client.py",
     f"{project_name}/a2a/__init__.py",
     f"{project_name}/a2a/agent_card.py",
     f"{project_name}/a2a/task_manager.py",
