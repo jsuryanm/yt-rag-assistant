@@ -30,5 +30,17 @@ class Settings(BaseSettings):
     
     streamlit_api_url: str = Field(default="http://localhost:8000")
 
+    # RAGAS Evaluation
+    openai_api_key: str = Field(default="",description="OpenAI API key used by RAGAS judge LLM only")
+    openai_judge_model: str = Field(default="gpt-4o-mini",description="OpenAI model used as RAGAS judge")
+    openai_embedding_model: str = Field(default="text-embedding-3-small",
+                                        description="OpenAI embeddings model for RAGAS answer_relevancy metric") 
+    
+    dagshub_repo_owner: str = Field(default="",description="DagsHub username")
+    dagshub_repo_name: str = Field(default="",description="Dagshub repo name")
+    dagshub_token: str = Field(default="",description="Dagshub personal access token")
+
+    mlflow_environment_name: str = Field(default="youtube-rag-ragas-eval",description="MLFlow experiment-name")
+
 settings = Settings()
     
