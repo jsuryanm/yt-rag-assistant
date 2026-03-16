@@ -25,6 +25,7 @@ from src.agents.rag_agent import AgenticRAGAgent
 from src.agents.mcp_tool_agent import MCPToolAgent
 
 from src.logger.custom_logger import logger 
+import asyncio
 
 class OrchestratorAgent:
     """
@@ -143,7 +144,7 @@ class OrchestratorAgent:
         
         return graph.compile()
     
-    def _classify_intent(self,state: AgentState) -> dict:
+    async def _classify_intent(self,state: AgentState) -> dict:
         """Node: Determine what user wants"""
         question = state.get("user_question","")
         video_url = state.get("video_url","")
@@ -154,7 +155,7 @@ class OrchestratorAgent:
                     "agent_trace":[f"Orchestrator: intent = summarize (no question)"],}
         
         request_text = f"Video URL: {video_url}\nUser question: {question}"
-        intent_raw = self._intent_chain.invoke({"request":request_text})
+        intent_raw = await self._intent_chain.ainvoke({"request":request_text})
         intent = intent_raw.strip().lower()
         
         if intent not in ("summarize","qa","search"):
@@ -195,12 +196,12 @@ class OrchestratorAgent:
 
         if mcp_context and rag_answer:
             combined = (
-                f"**From the video:**\n{rag_answer}\n\n"
-                f"**Additional web context:**\n{mcp_context}"
+                f"From the video:\n{rag_answer}\n\n"
+                f"Additional web context:\n{mcp_context}"
             )
         
         elif mcp_context:
-            combined =  f"**Web search results:**\n{mcp_context}"
+            combined =  f"Web search results:\n{mcp_context}"
         else:
             combined = rag_answer 
         
@@ -213,56 +214,9 @@ class OrchestratorAgent:
         return "combine" if intent == "search" else "end"
 
     # Public API 
-
-    def run(self,
-            video_url: str,
-            question: str|None = None) -> AgentState:
-        """
-        Synchronous entry point. Builds initial state and invokes the graph.
-
-        Args:
-            video_url: YouTube video URL
-            question:  Optional question (None = summary mode)
-
-        Returns:
-            Final AgentState after all nodes have run.
-
-        NOTE on messages initialisation:
-          We seed messages with a HumanMessage so the conversation history
-          starts correctly. MessagesState's add_messages reducer will append
-          subsequent AIMessages from agents automatically.
-          We do NOT set "messages": [] — MessagesState handles that default.
-        """
-
-        initial_state: AgentState = {
-            "video_url": video_url,
-            "user_question": question or "",
-            "raw_transcript": None,
-            "processed_transcript":None,
-            "chunks": None,
-            "retrieved_docs": None,
-            "is_relevant": None,
-            "rewrite_count": 0,
-            "summary": None,
-            "answer": None,
-            "agent_trace": [],
-            # Seed messages with the user's request as a HumanMessage.
-            # add_messages reducer appends further messages from agent nodes.
-            "messages":[HumanMessage(content=question or f"Summarize this video: {video_url}")],
-            "mcp_results": None,
-            "intent":None,
-            "error": None 
-        }
-
-        logger.info(f"Orchestrator: starting graph for url: {video_url[:50]}")
-        final_state = self._graph.invoke(initial_state)
-        logger.info(f"Orchestrator: graph complete, trace={final_state.get("agent_trace")}")
-        return final_state 
-    
-
-    async def arun(self,video_url: str,question: str | None = None) -> AgentState:
-        # async entry point for fastapi
-        initial_state: AgentState = {
+    def _build_initial_state(self, video_url: str, question: str | None) -> AgentState:
+        """Single source of truth for initial graph state."""
+        return {
             "video_url": video_url,
             "user_question": question or "",
             "raw_transcript": None,
@@ -280,7 +234,79 @@ class OrchestratorAgent:
             "error": None,
         }
 
-        final_state = await self._graph.ainvoke(initial_state)
+
+    # def run(self,
+    #         video_url: str,
+    #         question: str|None = None) -> AgentState:
+    #     """
+    #     Synchronous entry point. Builds initial state and invokes the graph.
+
+    #     Args:
+    #         video_url: YouTube video URL
+    #         question:  Optional question (None = summary mode)
+
+    #     Returns:
+    #         Final AgentState after all nodes have run.
+
+    #     NOTE on messages initialisation:
+    #       We seed messages with a HumanMessage so the conversation history
+    #       starts correctly. MessagesState's add_messages reducer will append
+    #       subsequent AIMessages from agents automatically.
+    #       We do NOT set "messages": [] — MessagesState handles that default.
+    #     """
+
+    #     initial_state: AgentState = {
+    #         "video_url": video_url,
+    #         "user_question": question or "",
+    #         "raw_transcript": None,
+    #         "processed_transcript":None,
+    #         "chunks": None,
+    #         "retrieved_docs": None,
+    #         "is_relevant": None,
+    #         "rewrite_count": 0,
+    #         "summary": None,
+    #         "answer": None,
+    #         "agent_trace": [],
+    #         # Seed messages with the user's request as a HumanMessage.
+    #         # add_messages reducer appends further messages from agent nodes.
+    #         "messages":[HumanMessage(content=question or f"Summarize this video: {video_url}")],
+    #         "mcp_results": None,
+    #         "intent":None,
+    #         "error": None 
+    #     }
+
+    #     logger.info(f"Orchestrator: starting graph for url: {video_url[:50]}")
+    #     final_state = self._graph.invoke(initial_state)
+    #     logger.info(f"Orchestrator: graph complete, trace={final_state.get("agent_trace")}")
+    #     return final_state 
+    def run(self, video_url: str, question: str | None = None) -> AgentState:
+        """Sync shim for CLI / tests only. FastAPI always uses arun()."""
+        return asyncio.run(self.arun(video_url, question))
+
+    
+
+    async def arun(self,video_url: str,question: str | None = None) -> AgentState:
+        # async entry point for fastapi
+        # initial_state: AgentState = {
+        #     "video_url": video_url,
+        #     "user_question": question or "",
+        #     "raw_transcript": None,
+        #     "processed_transcript": None,
+        #     "chunks": None,
+        #     "retrieved_docs": None,
+        #     "is_relevant": None,
+        #     "rewrite_count": 0,
+        #     "summary": None,
+        #     "answer": None,
+        #     "agent_trace": [],
+        #     "messages": [HumanMessage(content=question or f"Summarize this video: {video_url}")],
+        #     "mcp_results": None,
+        #     "intent": None,
+        #     "error": None,
+        # }
+
+        final_state = await self._graph.ainvoke(self._build_initial_state(video_url,question))
+        logger.info(f"Orchestrator: graph complete, trace={final_state.get('agent_trace')}")
         return final_state
     
     def stream_run(self, video_url: str, question: str | None = None):
@@ -292,24 +318,7 @@ class OrchestratorAgent:
             for chunk in orchestrator.stream_run(url, question):
                 print(chunk)  # Each chunk is a partial state update
         """
-        initial_state: AgentState = {
-            "video_url": video_url,
-            "user_question": question or "",
-            "raw_transcript": None,
-            "processed_transcript": None,
-            "chunks": None,
-            "retrieved_docs": None,
-            "is_relevant": None,
-            "rewrite_count": 0,
-            "summary": None,
-            "answer": None,
-            "agent_trace": [],
-            "messages": [HumanMessage(content=question or f"Summarize this video: {video_url}")],
-            "mcp_results": None,
-            "intent": None,
-            "error": None,
-        }
-
+        initial_state: AgentState = self._build_initial_state(video_url,question)
         # graph.stream() yields {"node_name": partial_state_update} after each node
         for chunk in self._graph.stream(initial_state):
             yield chunk

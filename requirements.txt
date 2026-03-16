@@ -13,6 +13,8 @@ langchain-tavily
 langgraph
 langgraph-prebuilt
 
+ragas
+
 tavily-python
 
 mcp
@@ -25,7 +27,11 @@ faiss-cpu
 
 transformers 
 sentence-transformers
+datasets
 torch
+
+mlflow 
+dvc
 
 youtube-transcript-api
 

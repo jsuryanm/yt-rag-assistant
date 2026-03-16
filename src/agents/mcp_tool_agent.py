@@ -73,46 +73,54 @@ class MCPToolAgent:
             logger.warning("MCPToolAgent: no MCP config — set TAVILY_API_KEY")
     
     #  LangGraph Node 
-    def run(self,state: AgentState) -> dict: 
-        question = state.get("user_question","")
+    # def run(self,state: AgentState) -> dict: 
+    #     question = state.get("user_question","")
         
-        if not question: 
-            return {"error":"No question for MCP agent.",
-                    "agent_trace":["MCPToolAgent: No question in state"]}
+    #     if not question: 
+    #         return {"error":"No question for MCP agent.",
+    #                 "agent_trace":["MCPToolAgent: No question in state"]}
         
         
-        if not self._mcp_config:
-            return {"mcp_results":[],
-                    "agent_trace":["MCPToolAgent: skipped TAVILY_API_KEY not set"],
-                    "error":"TAVILY_API_KEY not set. Get a free key at https://app.tavily.com",} 
-        try:
-            result = asyncio.run(self._arun(question))
-            return {"mcp_results":[result],
-                    "agent_trace":[f"MCPToolAgent: web search complete ({len(result):,} chars)"]}
-        except Exception as e:
-            logger.error(f"MCPToolAgent error: {str(e)}") 
+    #     if not self._mcp_config:
+    #         return {"mcp_results":[],
+    #                 "agent_trace":["MCPToolAgent: skipped TAVILY_API_KEY not set"],
+    #                 "error":"TAVILY_API_KEY not set. Get a free key at https://app.tavily.com",} 
+    #     try:
+    #         result = asyncio.run(self._arun(question))
+    #         return {"mcp_results":[result],
+    #                 "agent_trace":[f"MCPToolAgent: web search complete ({len(result):,} chars)"]}
+    #     except Exception as e:
+    #         logger.error(f"MCPToolAgent error: {str(e)}") 
 
-            # use stdio fallback if http fails
-            if self._use_http:
-                logger.info("MCPToolAgent: http failed, trying stdio fallback")
-                return self._run_with_stdio(question)
+    #         # use stdio fallback if http fails
+    #         if self._use_http:
+    #             logger.info("MCPToolAgent: http failed, trying stdio fallback")
+    #             return self._run_with_stdio(question)
             
-            return {"error":f"MCP search failed: {str(e)}",
-                    "mcp_results":[],
-                    "agent_trace":[f"MCPToolAgent: {str(e)}"]} 
+    #         return {"error":f"MCP search failed: {str(e)}",
+    #                 "mcp_results":[],
+    #                 "agent_trace":[f"MCPToolAgent: {str(e)}"]} 
     
-    async def arun(self,state: AgentState) -> dict:
-        """Async LangGraph node — use when graph is run with ainvoke()."""
-        question = state.get("user_question","")
+    async def run(self, state: AgentState) -> dict:
+        """Async LangGraph node — used by graph.ainvoke()."""
+        question = state.get("user_question", "")
 
         if not self._mcp_config:
-            return {"mcp_results":[],
-                    "agent_trace":["MCPToolAgent: skipped TAVILY_API_KEY not set"]}
+            return {"mcp_results": [],
+                    "agent_trace": ["MCPToolAgent: skipped — TAVILY_API_KEY not set"]}
+        try:
+            result = await self._arun(question)
+            return {"mcp_results": [result],
+                    "agent_trace": [f"MCPToolAgent: web search complete ({len(result):,} chars)"]}
+        except Exception as e:
+            logger.error(f"MCPToolAgent error: {str(e)}")
+            if self._use_http:
+                logger.info("MCPToolAgent: HTTP failed, trying stdio fallback")
+                return await self._arun_with_stdio(question)
+            return {"error": f"MCP search failed: {str(e)}",
+                    "mcp_results": [],
+                    "agent_trace": [f"MCPToolAgent: {str(e)}"]}
         
-        result = await self._arun(question)
-        return {"mcp_results":[result],
-                "agent_trace":[f"MCPToolAgent: web search complete ({len(result):,} chars)"]}
-    
     async def _arun(self,question: str) -> str:
         """Opens MultiServerMCPClient, gets tools, runs react agent"""
 
@@ -147,34 +155,27 @@ class MCPToolAgent:
             else str(final_message)
         )
 
-    def _run_with_stdio(self,question: str) -> list[dict]:
-        """
-        Fallback: run with stdio transport (local npx subprocess).
-        Used when the http remote server is unavailable.
-        Requires Node.js and npx installed.
-        """
+    # mcp_tool_agent.py — replace _run_with_stdio entirely
+    async def _arun_with_stdio(self, question: str) -> dict:
+        """Async stdio fallback when HTTP transport fails."""
         stdio_config = _build_mcp_config_stdio()
         if not stdio_config:
-            return {"error":"Both error and stdio transports failed",
-                    "mcp_results":[],
-                    "agent_trace":["MCPToolAgent: all transports failed"]}
-        
+            return {"error": "Both HTTP and stdio transports failed",
+                    "mcp_results": [],
+                    "agent_trace": ["MCPToolAgent: all transports failed"]}
         try:
             original = self._mcp_config
             self._mcp_config = stdio_config
-            
-            result = asyncio.run(self._arun(question)) 
+            result = await self._arun(question)
             self._mcp_config = original
-            
-            return {"mcp_results":[result],
-                    "agent_trace": ["MCPToolAgent: web search via stdio fallback"],}
-
+            return {"mcp_results": [result],
+                    "agent_trace": ["MCPToolAgent: web search via stdio fallback"]}
         except Exception as e:
             self._mcp_config = original
-            return {"error":f"stdio fallback also failed: {str(e)}",
-                    "mcp_results":[],
-                    "agent_trace":[f"MCPToolAgent: stdio failed: {str(e)}"]}
-    
+            return {"error": f"stdio fallback also failed: {str(e)}",
+                    "mcp_results": [],
+                    "agent_trace": [f"MCPToolAgent: stdio failed: {str(e)}"]}
+        
     async def search(self,query: str) -> list[dict]:
         """
         Direct search — bypasses the ReAct agent and calls the

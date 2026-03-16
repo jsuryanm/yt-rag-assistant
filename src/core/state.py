@@ -6,10 +6,9 @@ class AgentState(MessagesState):
     video_url: str 
     user_question: Optional[str]
 
-    raw_transcript: Optional[str]
     processed_transcript: Optional[str] # cleaned transcript as a single string 
-
     chunks: Optional[List[str]]
+    
     retrieved_docs: Optional[List[str]]
     is_relevant: Optional[bool] # are docs relevant 
     rewrite_count: int  # how many query rewrites happened

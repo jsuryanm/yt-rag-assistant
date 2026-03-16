@@ -26,13 +26,14 @@ class AgenticRAGAgent:
     ])
 
     _GENERATE_PROMPT = ChatPromptTemplate.from_messages([
-        ("system","""You are a fact-checker. Given context documents and a generate an answer,
-         determine if the answer is grounded in (supported by) the context."""),
+        ("system","""You are a fact-checker. Given the context documents, generate an answer and
+         determine if the answer is grounded in (supported by) the context.
+         If the context doesn't contain enough information, say so clearly."""),
          ("human","Context from video:\n{context}\n\nQuestion: {question}\n\nAnswer:")
     ])
 
     _HALLUCINATION_PROMPTS = ChatPromptTemplate.from_messages([
-        ("system","""You are a fact-checker. Given context and a generated answer,
+        ("system","""You are a fact-checker. Given context documents and a generated answer,
          determine if the answer is grounded in (supported by) in the context.
         Respond with ONLY 'yes' (grounded) or 'no' (not grounded). No explanation."""),
         ("human","Context:\n{context}\n\nAnswer: {answer}\n\nIs the answer grounded in the context?")
@@ -71,7 +72,7 @@ class AgenticRAGAgent:
         self._indexed_video_url: str | None = None 
     
     # Langraph nodes each take full AgentState and return partial update dict
-    def build_index(self,state: AgentState) -> dict:
+    async def build_index(self,state: AgentState) -> dict:
         """Node 1: Build FAISS index from transcript chunks"""
         chunks = state.get("chunks")
         video_url = state.get("video_url")
@@ -89,7 +90,7 @@ class AgenticRAGAgent:
 
         return {"agent_trace": [f"RAGAgent: FAISS index ready ({len(chunks)} chunks)"]}
     
-    def retrieve(self,state: AgentState) -> dict: 
+    async def retrieve(self,state: AgentState) -> dict: 
         """Node 2: Semantic Similarity search - find the top k relevant chunks"""
         question = state.get("user_question","")
         
@@ -104,7 +105,7 @@ class AgenticRAGAgent:
         return {"retrieved_docs":doc_texts,
                 "agent_trace":[f"RAGAgent: retrieved {len(doc_texts)} chunks"]}
     
-    def grade_docs(self,state: AgentState) -> dict:
+    async def grade_docs(self,state: AgentState) -> dict:
         """Node 3: LLM-as-judge - are retrieved docs relevant to the question"""
         question = state.get("user_question")
         docs = state.get("retrieved_docs",[])
@@ -116,7 +117,7 @@ class AgenticRAGAgent:
         docs_text = "\n\n".join(docs[:3])
         logger.info("RAGAgent.grade_docs: grading relevance")
         
-        result = self._grader_chain.invoke({"question":question,
+        result = await self._grader_chain.ainvoke({"question":question,
                                             "documents":docs_text})
         
         is_relevant = result.strip().lower().startswith("yes")
@@ -126,19 +127,19 @@ class AgenticRAGAgent:
         return {"is_relevant":is_relevant,
                 "agent_trace":[f"RAGAgent: grader says docs are {label}"]}
     
-    def rewrite_query(self,state: AgentState) -> dict:
+    async def rewrite_query(self,state: AgentState) -> dict:
         """Node 4: Rewrite query to improve retrieval quality"""
         question = state.get("user_question","")
         rewrite_count = state.get("rewrite_count",0)
 
         logger.info(f"RAGAgent.rewrite_query: attempt {rewrite_count + 1}")
-        rewritten = self._rewrite_chain.invoke({"question":question}).strip()
+        rewritten =  await self._rewrite_chain.ainvoke({"question":question}).strip()
 
         return {"user_question":rewritten,
                 "rewrite_count":rewrite_count + 1,
                 "agent_trace":[f"RAGAgent: rewrite #{rewrite_count + 1} -> '{rewritten[:60]}' "]}
     
-    def generate(self,state: AgentState) -> dict:
+    async def generate(self,state: AgentState) -> dict:
         """Node 5: Generate the final answer from retrieved docs"""
         question = state.get("user_question","")
         docs = state.get("retrieved_docs",[])
@@ -146,7 +147,7 @@ class AgenticRAGAgent:
         context = "\n\n".join(docs)
         logger.info("RAGAgent.generate: generating answer")
         
-        answer = self._generate_chain.invoke({
+        answer = await self._generate_chain.ainvoke({
             "context":context,
             "question":question
         })
@@ -154,7 +155,7 @@ class AgenticRAGAgent:
         return {"answer":answer,
                 "agent_trace":[f"RAGAgent: answer generated ({len(answer):,}) chars"]}
     
-    def check_hallucination(self,state: AgentState) -> dict:
+    async def check_hallucination(self,state: AgentState) -> dict:
         """Node 6: Verify the answer is grounded in retrieved docs"""
         answer = state.get("answer","")
         docs = state.get("retrieved_docs",[])
@@ -163,7 +164,7 @@ class AgenticRAGAgent:
             return {"agent_trace":["RAGAgent: hallucination check skipped"]}
         
         context = "\n\n".join(docs[:3])
-        result = self._hallucination_chain.invoke({
+        result = await self._hallucination_chain.ainvoke({
             "context": context,
             "answer": answer,
         })

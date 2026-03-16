@@ -47,7 +47,7 @@ class SummaryAgent:
 
         return chain 
     
-    def run(self,state: AgentState) -> dict:
+    async def run(self,state: AgentState) -> dict:
         """
         LangGraph node Expects state to have 'processed_transcript'
         Returns state dict with 'summary'
@@ -63,7 +63,7 @@ class SummaryAgent:
         try:
             truncated = transcript[:6000] if len(transcript) > 6000 else transcript
 
-            summary = self._chain.invoke({"transcript":truncated})
+            summary = await self._chain.ainvoke({"transcript":truncated})
             logger.info(f"SummaryAgent: summary generated ({len(summary)} chars)")
             
             return {"summary":summary,
@@ -75,7 +75,7 @@ class SummaryAgent:
             return {"error": f"Summary generation failed: {str(e)}",
                     "agent_trace": [f"SummaryAgent: error — {str(e)}"]}
     
-    async def arun(self, transcript: str) -> str:
-        """Async version for direct calls from FastAPI endpoints."""
-        truncated = transcript[:6000] if len(transcript) > 6000 else transcript
-        return await self._chain.ainvoke({"transcript": truncated})
+    # async def arun(self, transcript: str) -> str:
+    #     """Async version for direct calls from FastAPI endpoints."""
+    #     truncated = transcript[:6000] if len(transcript) > 6000 else transcript
+    #     return await self._chain.ainvoke({"transcript": truncated})

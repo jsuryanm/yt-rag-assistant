@@ -108,30 +108,11 @@ class TranscriptAgent:
         parts = []
         for snippet in transcript_data:
             try:
-                # New youtube-transcript-api uses attribute access
                 text = snippet.text.strip()
             except AttributeError:
-                # Fallback for older versions that return dicts
                 text = snippet.get("text", "").strip()
             if text:
                 parts.append(text)
 
         # Join with space — transcript is naturally continuous speech
         return " ".join(parts)
-    
-# if __name__ == "__main__":
-#     transcript_agent = TranscriptAgent()
-#     state = {
-#     "video_url": "https://www.youtube.com/watch?v=BV0YUeam4y8"
-# }
-
-#     result = transcript_agent.run(state)
-
-#     print("\nRESULT:")
-#     print(result.keys())
-
-#     print("\nTranscript preview:")
-#     print(result.get("processed_transcript","")[:500])
-
-#     print("\nChunks count:")
-#     print(len(result.get("chunks",[])))
